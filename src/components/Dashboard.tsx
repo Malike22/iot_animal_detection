@@ -107,16 +107,37 @@ export default function Dashboard({ onOpenSettings }: DashboardProps) {
 
     setIsSaving(true);
     try {
-      const formData = new FormData();
-      formData.append('image', selectedFile);
-      formData.append('animal', predictionResult.animal);
-      formData.append('confidence', predictionResult.confidence.toString());
-      formData.append('user_id', user.id);
+      // 1. Upload image to Supabase Storage
+      const bucket = "labeled-images";
+      const filename = `${user.id}/${Date.now()}_${selectedFile.name}`;
 
+      const { error: uploadError } = await supabase.storage
+        .from(bucket)
+        .upload(filename, selectedFile, {
+          contentType: selectedFile.type,
+          upsert: false
+        });
+
+      if (uploadError) throw uploadError;
+
+      // 2. Get Public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from(bucket)
+        .getPublicUrl(filename);
+
+      // 3. Send to Backend
       const backendUrl = "https://backend-animaldetection-1.onrender.com";
-      const response = await fetch(`${backendUrl}/save-detection`, {
+      const response = await fetch(`${backendUrl}/save-history`, {
         method: 'POST',
-        body: formData,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          image_url: publicUrl,
+          animal: predictionResult.animal,
+          confidence: predictionResult.confidence,
+          user_id: user.id,
+        }),
       });
 
       if (!response.ok) {

@@ -95,7 +95,42 @@ def predict():
 
 
 # =========================
-# SAVE DETECTION ENDPOINT (MANUAL)
+# SAVE HISTORY ENDPOINT (JSON-BASED)
+# =========================
+@app.route("/save-history", methods=["POST"])
+def save_history():
+    data = request.json
+    if not data:
+        return jsonify({"error": "No JSON data provided"}), 400
+
+    image_url = data.get("image_url")
+    animal = data.get("animal")
+    confidence = data.get("confidence")
+    user_id = data.get("user_id")
+
+    if not all([image_url, animal, confidence, user_id]):
+        return jsonify({"error": "Missing required data (image_url, animal, confidence, or user_id)"}), 400
+
+    try:
+        # Insert record into database (labeled_images table)
+        record = {
+            "labeled_image_url": image_url,
+            "animal_detected": animal,
+            "confidence_score": float(confidence),
+            "user_id": user_id
+        }
+
+        supabase.table("labeled_images").insert(record).execute()
+
+        return jsonify({"status": "saved"}), 200
+
+    except Exception as e:
+        print("Save history error:", e)
+        return jsonify({"error": str(e)}), 500
+
+
+# =========================
+# SAVE DETECTION ENDPOINT (MANUAL - FOR BACKWARD COMPATIBILITY)
 # =========================
 @app.route("/save-detection", methods=["POST"])
 def save_detection():
@@ -129,14 +164,14 @@ def save_detection():
         public_url = supabase.storage.from_(bucket).get_public_url(filename)
 
         # 3. Insert record into database (labeled_images table)
-        data = {
+        db_data = {
             "labeled_image_url": public_url,
             "animal_detected": animal,
             "confidence_score": float(confidence),
             "user_id": user_id
         }
 
-        supabase.table("labeled_images").insert(data).execute()
+        supabase.table("labeled_images").insert(db_data).execute()
 
         return jsonify({"status": "success", "message": "Detection saved to history"}), 200
 
