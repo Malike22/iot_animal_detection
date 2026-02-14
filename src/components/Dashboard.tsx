@@ -267,6 +267,7 @@ export default function Dashboard({ onOpenSettings }: DashboardProps) {
           )}
         </div>
 
+        {/* Hiding Image Gallery for now
         <div className="bg-white rounded-lg shadow-md">
           <div className="border-b border-gray-200">
             <div className="flex">
@@ -405,6 +406,7 @@ export default function Dashboard({ onOpenSettings }: DashboardProps) {
             </div>
           </div>
         </div>
+        */}
       </div>
     </div>
   );
