@@ -14,6 +14,8 @@ export default function Dashboard({ onOpenSettings }: DashboardProps) {
   const [labeledImages, setLabeledImages] = useState<LabeledImage[]>([]);
   const [loading, setLoading] = useState(true);
   const [simulationMode, setSimulationMode] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [predictionResult, setPredictionResult] = useState<{ animal: string; confidence: number } | null>(null);
 
   useEffect(() => {
     loadImages();
@@ -51,11 +53,18 @@ export default function Dashboard({ onOpenSettings }: DashboardProps) {
   const handleSimulateUpload = async (file: File) => {
     if (!user) return;
 
+    // Reset previous results
+    setPredictionResult(null);
+
+    // Create preview URL
+    const objectUrl = URL.createObjectURL(file);
+    setPreviewUrl(objectUrl);
+
     try {
       // 1. Prepare FormData
       const formData = new FormData();
       formData.append('image', file);
-      formData.append('user_id', user.id); // Send user_id for storage
+      formData.append('user_id', user.id);
 
       // 2. Send to Backend
       const backendUrl = "https://backend-animaldetection-1.onrender.com";
@@ -75,35 +84,35 @@ export default function Dashboard({ onOpenSettings }: DashboardProps) {
 
       const data = await response.json();
 
-      // Expected backend response:
-      // {
-      //   "status": "success",
-      //   "animal": "Tiger",
-      //   "confidence": 98.3
-      // }
-
-      // 3. Display Result Immediately
-      alert(`Success! Detected: ${data.animal} (${data.confidence.toFixed(1)}%)`);
+      // 3. Set Result State
+      setPredictionResult({
+        animal: data.animal,
+        confidence: data.confidence
+      });
 
       // 4. Poll for updates
-      // Capture current labeled count before polling starts (from state or fresh fetch)
-      // Since state might be stale in closure, let's rely on the fresh fetch from loadImages
-
       let attempts = 0;
       const maxAttempts = 10;
       const initialLabeledCount = labeledImages.length;
 
       const pollInterval = setInterval(async () => {
         attempts++;
-        const counts = await loadImages(true); // Silent load
+        const counts = await loadImages(true);
 
         if (counts && counts.labeledCount > initialLabeledCount) {
           clearInterval(pollInterval);
+          // Stay on view to show result, user can switch tab if they want history
+          // or we can auto-switch. Requirement says "Auto-switch to Labeled Images tab" in previous prompt?
+          // Current requirement says "Show inline", but didn't explicitly revoke auto-switch.
+          // However, showing inline suggests staying on the current view. 
+          // Re-reading usage: "Upload → Image preview + Prediction shown inline on dashboard."
+          // "Dashboard will later fetch stored detections for history."
+          // I will keep auto-switch logic for now as it confirms backend storage.
           setActiveTab('labeled');
         } else if (attempts >= maxAttempts) {
           clearInterval(pollInterval);
         }
-      }, 2000); // Check every 2 seconds
+      }, 2000);
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -168,12 +177,8 @@ export default function Dashboard({ onOpenSettings }: DashboardProps) {
           </div>
         </div>
       </nav>
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="bg-gradient-to-r from-green-600 to-blue-600 rounded-xl p-6 text-white mb-8">
-          <h2 className="text-2xl font-bold mb-2">Welcome to Your Dashboard</h2>
-          <p className="text-green-100">Monitor and analyze animal detections from your IoT device in real-time</p>
-        </div>
+        {/* Welcome header */}
 
         <div className="bg-white rounded-lg shadow-md p-6 mb-8">
           <div className="flex items-center justify-between mb-4">
@@ -186,25 +191,78 @@ export default function Dashboard({ onOpenSettings }: DashboardProps) {
             </button>
           </div>
           {simulationMode && (
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-8">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleSimulateUpload(file);
-                }}
-                className="hidden"
-                id="file-upload"
-              />
-              <label
-                htmlFor="file-upload"
-                className="flex flex-col items-center cursor-pointer"
-              >
-                <Upload className="w-12 h-12 text-gray-400 mb-3" />
-                <span className="text-gray-600 font-medium">Click to upload an image</span>
-                <span className="text-sm text-gray-500 mt-1">Simulates Raspberry Pi capture</span>
-              </label>
+            <div className="space-y-6">
+              <div className="border-2 border-dashed border-gray-300 rounded-lg p-8">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleSimulateUpload(file);
+                  }}
+                  className="hidden"
+                  id="file-upload"
+                />
+                <label
+                  htmlFor="file-upload"
+                  className="flex flex-col items-center cursor-pointer"
+                >
+                  <Upload className="w-12 h-12 text-gray-400 mb-3" />
+                  <span className="text-gray-600 font-medium">Click to upload an image</span>
+                  <span className="text-sm text-gray-500 mt-1">Simulates Raspberry Pi capture</span>
+                </label>
+              </div>
+
+              {/* Result Panel */}
+              {(previewUrl || predictionResult) && (
+                <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                  <h4 className="font-semibold text-gray-700 mb-4">Current Prediction</h4>
+                  <div className="flex flex-col md:flex-row gap-6">
+
+                    {/* Left: Image Preview */}
+                    <div className="w-full md:w-1/2">
+                      {previewUrl && (
+                        <div className="rounded-lg overflow-hidden border border-gray-300 shadow-sm">
+                          <img
+                            src={previewUrl}
+                            alt="Preview"
+                            className="w-full h-64 object-cover"
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Right: Prediction Details */}
+                    <div className="w-full md:w-1/2 flex flex-col justify-center">
+                      {predictionResult ? (
+                        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
+                          <div className="mb-4">
+                            <span className="text-sm text-gray-500 uppercase tracking-wider font-semibold">Detected Animal</span>
+                            <p className="text-3xl font-bold text-gray-900 mt-1">{predictionResult.animal}</p>
+                          </div>
+
+                          <div>
+                            <span className="text-sm text-gray-500 uppercase tracking-wider font-semibold">Confidence</span>
+                            <div className="flex items-center gap-3 mt-1">
+                              <div className="flex-1 h-4 bg-gray-200 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-green-500 rounded-full transition-all duration-500 ease-out"
+                                  style={{ width: `${predictionResult.confidence}%` }}
+                                />
+                              </div>
+                              <span className="font-bold text-green-700">{predictionResult.confidence.toFixed(1)}%</span>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="h-full flex items-center justify-center text-gray-400">
+                          {previewUrl && <p className="animate-pulse">Analyzing image...</p>}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
