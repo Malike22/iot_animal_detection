@@ -58,8 +58,7 @@ export default function Dashboard({ onOpenSettings }: DashboardProps) {
       formData.append('user_id', user.id); // Send user_id for storage
 
       // 2. Send to Backend
-      // Use env var or default to localhost for dev
-      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+      const backendUrl = "https://backend-animaldetection-1.onrender.com";
 
       console.log('Sending image to backend:', backendUrl);
       console.log('User ID:', user.id);
