@@ -61,6 +61,9 @@ export default function Dashboard({ onOpenSettings }: DashboardProps) {
       // Use env var or default to localhost for dev
       const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
+      console.log('Sending image to backend:', backendUrl);
+      console.log('User ID:', user.id);
+
       const response = await fetch(`${backendUrl}/predict`, {
         method: 'POST',
         body: formData,
