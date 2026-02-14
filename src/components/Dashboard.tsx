@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState /*, useEffect */ } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase, CapturedImage, LabeledImage } from '../lib/supabase';
-import { LogOut, Camera, Tag, RefreshCw, AlertTriangle, Clock, CheckCircle, Upload, Settings as SettingsIcon } from 'lucide-react';
+// import { supabase, /* CapturedImage, LabeledImage */ } from '../lib/supabase';
+import { LogOut, Camera, /* Tag, */ RefreshCw, /* AlertTriangle, Clock, */ CheckCircle, Upload, Settings as SettingsIcon } from 'lucide-react';
 
 interface DashboardProps {
   onOpenSettings: () => void;
@@ -9,14 +9,17 @@ interface DashboardProps {
 
 export default function Dashboard({ onOpenSettings }: DashboardProps) {
   const { user, signOut } = useAuth();
-  const [activeTab, setActiveTab] = useState<'captured' | 'labeled'>('captured');
-  const [capturedImages, setCapturedImages] = useState<CapturedImage[]>([]);
-  const [labeledImages, setLabeledImages] = useState<LabeledImage[]>([]);
-  const [loading, setLoading] = useState(true);
+  // const [activeTab, setActiveTab] = useState<'captured' | 'labeled'>('captured');
+  // const [capturedImages, setCapturedImages] = useState<CapturedImage[]>([]);
+  // const [labeledImages, setLabeledImages] = useState<LabeledImage[]>([]);
+  // const [loading, setLoading] = useState(true);
   const [simulationMode, setSimulationMode] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [predictionResult, setPredictionResult] = useState<{ animal: string; confidence: number } | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
+  /*
   useEffect(() => {
     loadImages();
   }, [user]);
@@ -43,34 +46,34 @@ export default function Dashboard({ onOpenSettings }: DashboardProps) {
     if (labeledRes.data) setLabeledImages(labeledRes.data);
 
     if (!silent) setLoading(false);
-
+    
     return {
       capturedCount: capturedRes.data?.length || 0,
       labeledCount: labeledRes.data?.length || 0
     };
   };
+  */
 
   const handleSimulateUpload = async (file: File) => {
     if (!user) return;
 
     // Reset previous results
     setPredictionResult(null);
+    setSelectedFile(file);
 
     // Create preview URL
     const objectUrl = URL.createObjectURL(file);
     setPreviewUrl(objectUrl);
 
     try {
-      // 1. Prepare FormData
+      // 1. Prepare FormData (Just the image for prediction)
       const formData = new FormData();
       formData.append('image', file);
-      formData.append('user_id', user.id);
 
       // 2. Send to Backend
       const backendUrl = "https://backend-animaldetection-1.onrender.com";
 
-      console.log('Sending image to backend:', backendUrl);
-      console.log('User ID:', user.id);
+      console.log('Sending image for prediction:', backendUrl);
 
       const response = await fetch(`${backendUrl}/predict`, {
         method: 'POST',
@@ -90,29 +93,7 @@ export default function Dashboard({ onOpenSettings }: DashboardProps) {
         confidence: data.confidence
       });
 
-      // 4. Poll for updates
-      let attempts = 0;
-      const maxAttempts = 10;
-      const initialLabeledCount = labeledImages.length;
-
-      const pollInterval = setInterval(async () => {
-        attempts++;
-        const counts = await loadImages(true);
-
-        if (counts && counts.labeledCount > initialLabeledCount) {
-          clearInterval(pollInterval);
-          // Stay on view to show result, user can switch tab if they want history
-          // or we can auto-switch. Requirement says "Auto-switch to Labeled Images tab" in previous prompt?
-          // Current requirement says "Show inline", but didn't explicitly revoke auto-switch.
-          // However, showing inline suggests staying on the current view. 
-          // Re-reading usage: "Upload → Image preview + Prediction shown inline on dashboard."
-          // "Dashboard will later fetch stored detections for history."
-          // I will keep auto-switch logic for now as it confirms backend storage.
-          setActiveTab('labeled');
-        } else if (attempts >= maxAttempts) {
-          clearInterval(pollInterval);
-        }
-      }, 2000);
+      // NO POLLING: Storage is now manual
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -121,6 +102,40 @@ export default function Dashboard({ onOpenSettings }: DashboardProps) {
     }
   };
 
+  const handleSaveToHistory = async () => {
+    if (!user || !selectedFile || !predictionResult) return;
+
+    setIsSaving(true);
+    try {
+      const formData = new FormData();
+      formData.append('image', selectedFile);
+      formData.append('animal', predictionResult.animal);
+      formData.append('confidence', predictionResult.confidence.toString());
+      formData.append('user_id', user.id);
+
+      const backendUrl = "https://backend-animaldetection-1.onrender.com";
+      const response = await fetch(`${backendUrl}/save-detection`, {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to save to history');
+      }
+
+      alert('Success! Detection saved to history.');
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Error saving to history:', error);
+      alert(`Error saving to history: ${errorMessage}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  /*
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleString();
   };
@@ -147,6 +162,7 @@ export default function Dashboard({ onOpenSettings }: DashboardProps) {
       </span>
     );
   };
+  */
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -253,6 +269,27 @@ export default function Dashboard({ onOpenSettings }: DashboardProps) {
                               <span className="font-bold text-green-700">{predictionResult.confidence.toFixed(1)}%</span>
                             </div>
                           </div>
+
+                          <button
+                            onClick={handleSaveToHistory}
+                            disabled={isSaving}
+                            className={`mt-6 w-full flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-bold text-white transition-all transform active:scale-95 ${isSaving
+                              ? 'bg-gray-400 cursor-not-allowed'
+                              : 'bg-green-600 hover:bg-green-700 shadow-lg hover:shadow-green-200'
+                              }`}
+                          >
+                            {isSaving ? (
+                              <>
+                                <RefreshCw className="w-5 h-5 animate-spin" />
+                                Saving...
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle className="w-5 h-5" />
+                                Save to History
+                              </>
+                            )}
+                          </button>
                         </div>
                       ) : (
                         <div className="h-full flex items-center justify-center text-gray-400">

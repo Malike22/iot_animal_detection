@@ -55,20 +55,16 @@ def background_storage(image_bytes, filename, mimetype, animal, confidence, user
 
 
 # =========================
-# PREDICT ENDPOINT
+# PREDICT ENDPOINT (AI ONLY)
 # =========================
 @app.route("/predict", methods=["POST"])
 def predict():
-
     if "image" not in request.files:
         return jsonify({"error": "No image uploaded"}), 400
 
     file = request.files["image"]
     image_bytes = file.read()
     mimetype = file.mimetype
-
-    # Optional user_id from frontend
-    user_id = request.form.get("user_id")
 
     try:
         # ===== SEND IMAGE TO HF DOCKER SPACE =====
@@ -87,17 +83,7 @@ def predict():
         animal = prediction.get("label", "Unknown")
         confidence = float(prediction.get("confidence", 0)) * 100
 
-        # ===== START BACKGROUND STORAGE THREAD =====
-        filename = f"{int(time.time())}_{file.filename}"
-
-        thread = threading.Thread(
-            target=background_storage,
-            args=(image_bytes, filename, mimetype, animal, confidence, user_id),
-            daemon=True
-        )
-        thread.start()
-
-        # ===== RETURN RESULT IMMEDIATELY =====
+        # ===== RETURN RESULT IMMEDIATELY (NO STORAGE) =====
         return jsonify({
             "status": "success",
             "animal": animal,
@@ -105,6 +91,57 @@ def predict():
         }), 200
 
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# =========================
+# SAVE DETECTION ENDPOINT (MANUAL)
+# =========================
+@app.route("/save-detection", methods=["POST"])
+def save_detection():
+    if "image" not in request.files:
+        return jsonify({"error": "No image uploaded"}), 400
+
+    file = request.files["image"]
+    animal = request.form.get("animal")
+    confidence = request.form.get("confidence")
+    user_id = request.form.get("user_id")
+
+    if not all([animal, confidence, user_id]):
+        return jsonify({"error": "Missing required data (animal, confidence, or user_id)"}), 400
+
+    try:
+        image_bytes = file.read()
+        mimetype = file.mimetype
+        # Using a folder-like path for "captured-images" bucket requirement if needed
+        # But the user asked for bucket "captured-images" specifically.
+        bucket = "captured-images"
+        filename = f"{int(time.time())}_{file.filename}"
+
+        # 1. Upload image to Supabase Storage
+        supabase.storage.from_(bucket).upload(
+            filename,
+            image_bytes,
+            {"content-type": mimetype}
+        )
+
+        # 2. Get Public URL
+        public_url = supabase.storage.from_(bucket).get_public_url(filename)
+
+        # 3. Insert record into database (labeled_images table)
+        data = {
+            "labeled_image_url": public_url,
+            "animal_detected": animal,
+            "confidence_score": float(confidence),
+            "user_id": user_id
+        }
+
+        supabase.table("labeled_images").insert(data).execute()
+
+        return jsonify({"status": "success", "message": "Detection saved to history"}), 200
+
+    except Exception as e:
+        print("Save detection error:", e)
         return jsonify({"error": str(e)}), 500
 
 
