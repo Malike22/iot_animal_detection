@@ -108,7 +108,7 @@ export default function Dashboard({ onOpenSettings }: DashboardProps) {
     setIsSaving(true);
     try {
       // 1. Upload image to Supabase Storage
-      const bucket = "labeled-images";
+      const bucket = "captured-images";
       const filename = `${user.id}/${Date.now()}_${selectedFile.name}`;
 
       const { error: uploadError } = await supabase.storage

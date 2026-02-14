@@ -27,7 +27,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 def background_storage(image_bytes, filename, mimetype, animal, confidence, user_id):
 
     try:
-        bucket = "labeled-images"
+        bucket = "captured-images"
 
         # Upload image to Supabase Storage
         supabase.storage.from_(bucket).upload(
