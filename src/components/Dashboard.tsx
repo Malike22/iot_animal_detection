@@ -1,6 +1,6 @@
 import { useState /*, useEffect */ } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-// import { supabase, /* CapturedImage, LabeledImage */ } from '../lib/supabase';
+import { supabase, /* CapturedImage, LabeledImage */ } from '../lib/supabase';
 import { LogOut, Camera, /* Tag, */ RefreshCw, /* AlertTriangle, Clock, */ CheckCircle, Upload, Settings as SettingsIcon } from 'lucide-react';
 
 interface DashboardProps {
