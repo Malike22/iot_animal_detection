@@ -19,10 +19,10 @@ export default function Dashboard({ onOpenSettings }: DashboardProps) {
     loadImages();
   }, [user]);
 
-  const loadImages = async () => {
+  const loadImages = async (silent = false) => {
     if (!user) return;
 
-    setLoading(true);
+    if (!silent) setLoading(true);
 
     const [capturedRes, labeledRes] = await Promise.all([
       supabase
@@ -40,53 +40,69 @@ export default function Dashboard({ onOpenSettings }: DashboardProps) {
     if (capturedRes.data) setCapturedImages(capturedRes.data);
     if (labeledRes.data) setLabeledImages(labeledRes.data);
 
-    setLoading(false);
+    if (!silent) setLoading(false);
+
+    return {
+      capturedCount: capturedRes.data?.length || 0,
+      labeledCount: labeledRes.data?.length || 0
+    };
   };
 
   const handleSimulateUpload = async (file: File) => {
     if (!user) return;
 
     try {
-      const base64String = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          const result = e.target?.result as string;
-          resolve(result.split(',')[1]);
-        };
-        reader.onerror = () => reject(new Error('Failed to read file'));
-        reader.readAsDataURL(file);
+      // 1. Prepare FormData
+      const formData = new FormData();
+      formData.append('image', file);
+      formData.append('user_id', user.id); // Send user_id for storage
+
+      // 2. Send to Backend
+      // Use env var or default to localhost for dev
+      const backendUrl = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+
+      const response = await fetch(`${backendUrl}/predict`, {
+        method: 'POST',
+        body: formData,
       });
-
-      const { data: { session } } = await supabase.auth.getSession();
-      const token = session?.access_token;
-
-      if (!token) {
-        throw new Error('Not authenticated');
-      }
-
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/upload-image`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            image: base64String,
-            userId: user.id,
-            metadata: { simulated: true }
-          })
-        }
-      );
 
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.error || `Upload failed with status ${response.status}`);
       }
 
-      await loadImages();
-      alert('Image uploaded successfully! It will be processed shortly.');
+      const data = await response.json();
+
+      // Expected backend response:
+      // {
+      //   "status": "success",
+      //   "animal": "Tiger",
+      //   "confidence": 98.3
+      // }
+
+      // 3. Display Result Immediately
+      alert(`Success! Detected: ${data.animal} (${data.confidence.toFixed(1)}%)`);
+
+      // 4. Poll for updates
+      // Capture current labeled count before polling starts (from state or fresh fetch)
+      // Since state might be stale in closure, let's rely on the fresh fetch from loadImages
+
+      let attempts = 0;
+      const maxAttempts = 10;
+      const initialLabeledCount = labeledImages.length;
+
+      const pollInterval = setInterval(async () => {
+        attempts++;
+        const counts = await loadImages(true); // Silent load
+
+        if (counts && counts.labeledCount > initialLabeledCount) {
+          clearInterval(pollInterval);
+          setActiveTab('labeled');
+        } else if (attempts >= maxAttempts) {
+          clearInterval(pollInterval);
+        }
+      }, 2000); // Check every 2 seconds
+
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error('Error uploading image:', error);
@@ -196,22 +212,20 @@ export default function Dashboard({ onOpenSettings }: DashboardProps) {
             <div className="flex">
               <button
                 onClick={() => setActiveTab('captured')}
-                className={`flex-1 px-6 py-4 font-semibold flex items-center justify-center gap-2 transition ${
-                  activeTab === 'captured'
-                    ? 'border-b-2 border-green-600 text-green-600'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
+                className={`flex-1 px-6 py-4 font-semibold flex items-center justify-center gap-2 transition ${activeTab === 'captured'
+                  ? 'border-b-2 border-green-600 text-green-600'
+                  : 'text-gray-500 hover:text-gray-700'
+                  }`}
               >
                 <Camera className="w-5 h-5" />
                 Captured Images ({capturedImages.length})
               </button>
               <button
                 onClick={() => setActiveTab('labeled')}
-                className={`flex-1 px-6 py-4 font-semibold flex items-center justify-center gap-2 transition ${
-                  activeTab === 'labeled'
-                    ? 'border-b-2 border-green-600 text-green-600'
-                    : 'text-gray-500 hover:text-gray-700'
-                }`}
+                className={`flex-1 px-6 py-4 font-semibold flex items-center justify-center gap-2 transition ${activeTab === 'labeled'
+                  ? 'border-b-2 border-green-600 text-green-600'
+                  : 'text-gray-500 hover:text-gray-700'
+                  }`}
               >
                 <Tag className="w-5 h-5" />
                 Labeled Images ({labeledImages.length})
@@ -322,7 +336,7 @@ export default function Dashboard({ onOpenSettings }: DashboardProps) {
 
             <div className="mt-6 flex justify-center">
               <button
-                onClick={loadImages}
+                onClick={() => loadImages()}
                 className="flex items-center gap-2 px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
               >
                 <RefreshCw className="w-4 h-4" />
